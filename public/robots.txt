@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /viewer
+
+Sitemap: https://gazijute.com/sitemap.xml

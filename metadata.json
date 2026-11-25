@@ -1,0 +1,6 @@
+{
+  "name": "Gazi Jute Enterprises",
+  "description": "Wholesale Jute Catalogue, Inventory Management & WhatsApp Quotation Portal for Gazi Jute Enterprises.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

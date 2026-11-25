@@ -1,0 +1,53 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isStorageAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email != null
+        && (
+          request.auth.token.email.lower() in ['sepaisahid1999@gmail.com', 'gazijute91@gmail.com']
+          || request.auth.token.role == 'ADMIN'
+        );
+    }
+
+    function isValidImageUpload(fileName) {
+      return fileName.size() >= 1
+        && fileName.size() <= 128
+        && request.resource != null
+        && request.resource.size > 0
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /products/{productId}/{fileName} {
+      allow read: if true;
+      allow create, update: if isStorageAdmin()
+        && productId.size() >= 1
+        && productId.size() <= 128
+        && isValidImageUpload(fileName);
+      allow delete: if isStorageAdmin();
+    }
+
+    match /branding/{fileName} {
+      allow read: if true;
+      allow create, update: if isStorageAdmin()
+        && isValidImageUpload(fileName);
+      allow delete: if isStorageAdmin();
+    }
+
+    match /cms/{subPath=**} {
+      allow read: if true;
+      allow create, update: if isStorageAdmin()
+        && request.resource != null
+        && request.resource.size > 0
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isStorageAdmin();
+    }
+  }
+}

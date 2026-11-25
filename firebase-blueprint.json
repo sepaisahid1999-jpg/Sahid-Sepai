@@ -1,0 +1,461 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authorized user profile and RBAC role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["ADMIN", "VIEWER", "BUYER"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "active", "createdAt", "updatedAt"]
+    },
+    "UserInvite": {
+      "title": "UserInvite",
+      "description": "Admin-provisioned email allowlist for ADMIN or VIEWER accounts.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["ADMIN", "VIEWER"] },
+        "active": { "type": "boolean" },
+        "invitedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "displayName", "role", "active", "invitedBy", "createdAt", "updatedAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product category for jute wholesale catalogue.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9\\-]+$" },
+        "description": { "type": "string", "maxLength": 400 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug", "active", "createdAt", "updatedAt"]
+    },
+    "PublicProduct": {
+      "title": "PublicProduct",
+      "description": "Publicly accessible product catalogue entry without internal pricing, cost, or supplier data.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "categoryName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "images": { "type": "array", "description": "Up to 8 product image URLs." },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"] },
+        "showStockPublicly": { "type": "boolean" },
+        "publicAvailableStock": { "type": "number" },
+        "minOrderQty": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "sku", "name", "categoryId", "categoryName", "description", "unit", "images", "status", "showStockPublicly", "createdAt", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Internal inventory master record with weighted average purchase/sale values and profit tracking.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "categoryName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "images": { "type": "array" },
+        "availableStock": { "type": "number" },
+        "avgPurchasePrice": { "type": "number" },
+        "avgSalePrice": { "type": "number" },
+        "totalPurchaseQty": { "type": "number" },
+        "totalSalesQty": { "type": "number" },
+        "totalPurchaseAmount": { "type": "number" },
+        "totalSalesAmount": { "type": "number" },
+        "totalCogs": { "type": "number" },
+        "currentStockValue": { "type": "number" },
+        "grossProfit": { "type": "number" },
+        "estimatedProfit": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "minOrderQty": { "type": "number" },
+        "showStockPublicly": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productId", "sku", "name", "categoryId", "categoryName", "description", "unit", "images",
+        "availableStock", "avgPurchasePrice", "avgSalePrice", "totalPurchaseQty", "totalSalesQty",
+        "totalPurchaseAmount", "totalSalesAmount", "totalCogs", "currentStockValue", "grossProfit",
+        "estimatedProfit", "lowStockThreshold", "showStockPublicly", "status", "createdAt", "updatedAt"
+      ]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Stock In / purchase transaction and controlled reversal record.",
+      "type": "object",
+      "properties": {
+        "purchaseId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "purchaseDate": { "type": "string", "minLength": 8, "maxLength": 32 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "supplierName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "invoiceNumber": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "quantity": { "type": "number" },
+        "purchaseRate": { "type": "number" },
+        "freightAmount": { "type": "number" },
+        "otherExpenses": { "type": "number" },
+        "discount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "additionalExpenses": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["PAID", "PARTIAL", "PENDING", "CREDIT"] },
+        "referencePurchaseId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "type": { "type": "string", "enum": ["PURCHASE", "CORRECTION", "RETURN_TO_SUPPLIER", "CANCELLATION_REVERSAL"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productId", "productName", "sku", "unit", "purchaseDate", "supplierName", "invoiceNumber",
+        "quantity", "purchaseRate", "additionalExpenses", "totalAmount", "type", "createdBy", "createdAt"
+      ]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Stock Out / sales transaction record with COGS and gross profit.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "saleDate": { "type": "string", "minLength": 8, "maxLength": 32 },
+        "invoiceNumber": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "quantity": { "type": "number" },
+        "saleRate": { "type": "number" },
+        "discount": { "type": "number" },
+        "additionalCharges": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "costOfGoodsSold": { "type": "number" },
+        "grossProfit": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "type": { "type": "string", "enum": ["SALE", "CORRECTION", "CUSTOMER_RETURN"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productId", "productName", "sku", "unit", "customerName", "saleDate", "invoiceNumber",
+        "quantity", "saleRate", "discount", "additionalCharges", "totalAmount",
+        "costOfGoodsSold", "grossProfit", "type", "createdBy", "createdAt"
+      ]
+    },
+    "StockTransaction": {
+      "title": "StockTransaction",
+      "description": "Immutable inventory ledger entry for every stock movement and correction.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "txType": { "type": "string", "enum": ["STOCK_IN", "STOCK_OUT", "PURCHASE_CORRECTION", "PURCHASE_REVERSAL", "SALE_RETURN", "SALE_CANCELLATION"] },
+        "referenceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "txDate": { "type": "string", "minLength": 8, "maxLength": 32 },
+        "quantityDelta": { "type": "number" },
+        "unitRate": { "type": "number" },
+        "totalValue": { "type": "number" },
+        "resultingStock": { "type": "number" },
+        "resultingAvgPurchasePrice": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productId", "productName", "sku", "txType", "referenceId", "txDate",
+        "quantityDelta", "unitRate", "totalValue", "resultingStock", "resultingAvgPurchasePrice",
+        "createdBy", "createdAt"
+      ]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Wholesale jute mill or raw fiber supplier directory entry.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 254 },
+        "address": { "type": "string", "maxLength": 400 },
+        "gstNumber": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Wholesale buyer / commercial client directory entry.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "location": { "type": "string", "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 254 },
+        "gstNumber": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt", "updatedAt"]
+    },
+    "Enquiry": {
+      "title": "Enquiry",
+      "description": "Buyer quotation and WhatsApp enquiry record.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 32 },
+        "buyerName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "buyerPhone": { "type": "string", "maxLength": 32 },
+        "buyerLocation": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "whatsappNumberUsed": { "type": "string", "maxLength": 24 },
+        "enquiryType": { "type": "string", "enum": ["PRODUCT", "GENERAL"] },
+        "status": { "type": "string", "enum": ["NEW", "PENDING", "CONTACTED", "COMPLETED", "CANCELLED"] },
+        "adminNotes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productName", "buyerName", "buyerLocation", "enquiryType", "status", "createdAt", "updatedAt"
+      ]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Publicly editable company branding, contact numbers, address, and footer settings.",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "tagline": { "type": "string", "maxLength": 240 },
+        "logoUrl": { "type": "string", "maxLength": 1000 },
+        "contactNumbers": { "type": "array" },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 254 },
+        "address": { "type": "string", "maxLength": 500 },
+        "aboutSummary": { "type": "string", "maxLength": 2000 },
+        "aboutStory": { "type": "string", "maxLength": 5000 },
+        "footerCopyright": { "type": "string", "maxLength": 240 },
+        "businessHours": { "type": "string", "maxLength": 200 },
+        "gstNumber": { "type": "string", "maxLength": 32 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "contactNumbers", "email", "address", "footerCopyright", "updatedAt"]
+    },
+    "WhatsAppNumber": {
+      "title": "WhatsAppNumber",
+      "description": "Configured WhatsApp Business recipient number for enquiries.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "phoneNumber": { "type": "string", "minLength": 8, "maxLength": 18, "pattern": "^\\+[1-9][0-9]{6,14}$" },
+        "isActive": { "type": "boolean" },
+        "isDefault": { "type": "boolean" },
+        "receivesProductEnquiries": { "type": "boolean" },
+        "receivesGeneralEnquiries": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "displayName", "phoneNumber", "isActive", "isDefault",
+        "receivesProductEnquiries", "receivesGeneralEnquiries", "createdAt", "updatedAt"
+      ]
+    },
+    "CmsConfigDocument": {
+      "title": "CmsConfigDocument",
+      "description": "Website CMS configuration document (draft or published) covering general, header, homepage sections, footer, design tokens, and SEO.",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED", "UNPUBLISHED"] },
+        "version": { "type": "number" },
+        "general": { "type": "object" },
+        "header": { "type": "object" },
+        "homepage": { "type": "object" },
+        "footer": { "type": "object" },
+        "design": { "type": "object" },
+        "seo": { "type": "object" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["status", "version", "general", "header", "homepage", "footer", "design", "seo", "updatedBy", "updatedAt"]
+    },
+    "CmsRevision": {
+      "title": "CmsRevision",
+      "description": "Timestamped revision snapshot of Website CMS state for rollback and audit.",
+      "type": "object",
+      "properties": {
+        "version": { "type": "number" },
+        "action": { "type": "string", "enum": ["PUBLISHED", "DRAFT_SAVED", "UNPUBLISHED", "RESTORED"] },
+        "note": { "type": "string", "maxLength": 300 },
+        "savedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "savedByEmail": { "type": "string", "maxLength": 254 },
+        "snapshot": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["version", "action", "note", "savedBy", "savedByEmail", "snapshot", "createdAt"]
+    },
+    "CmsPage": {
+      "title": "CmsPage",
+      "description": "Managed public page (About Us, Contact Us, or custom CMS page) with Draft/Publish status and SEO.",
+      "type": "object",
+      "properties": {
+        "pageId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[a-z0-9\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "subtitle": { "type": "string", "maxLength": 400 },
+        "heroImage": { "type": "string", "maxLength": 1200 },
+        "content": { "type": "string", "maxLength": 20000 },
+        "galleryImages": { "type": "array" },
+        "seoTitle": { "type": "string", "maxLength": 160 },
+        "seoDescription": { "type": "string", "maxLength": 320 },
+        "seoKeywords": { "type": "string", "maxLength": 400 },
+        "seoOgImage": { "type": "string", "maxLength": 1200 },
+        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+        "isSystemPage": { "type": "boolean" },
+        "showInNav": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pageId", "slug", "title", "content", "galleryImages", "status", "isSystemPage", "showInNav", "createdAt", "updatedAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Scheduled promotional or operational notice banner.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 2, "maxLength": 600 },
+        "linkLabel": { "type": "string", "maxLength": 60 },
+        "linkUrl": { "type": "string", "maxLength": 400 },
+        "bgColor": { "type": "string", "maxLength": 24 },
+        "textColor": { "type": "string", "maxLength": 24 },
+        "isActive": { "type": "boolean" },
+        "startDate": { "type": "string", "maxLength": 32 },
+        "endDate": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "isActive", "bgColor", "textColor", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable chronological audit trail of administrative operations.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "entityType": { "type": "string", "minLength": 2, "maxLength": 48 },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "summary": { "type": "string", "minLength": 2, "maxLength": 400 },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorEmail": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "actorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "entityType", "entityId", "summary", "actorUid", "actorEmail", "actorName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User accounts and role assignments (ADMIN, VIEWER, BUYER)."
+    },
+    "/userInvites/{email}": {
+      "schema": { "$ref": "#/entities/UserInvite" },
+      "description": "Admin-managed invite allowlist keyed by lowercased email."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Product categories."
+    },
+    "/publicProducts/{productId}": {
+      "schema": { "$ref": "#/entities/PublicProduct" },
+      "description": "Public catalogue mirror excluding purchase price, profit, and supplier info."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Private master inventory and valuation records."
+    },
+    "/purchases/{purchaseId}": {
+      "schema": { "$ref": "#/entities/Purchase" },
+      "description": "Stock In and purchase correction records."
+    },
+    "/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/Sale" },
+      "description": "Stock Out, sales, and customer return records."
+    },
+    "/stockTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/StockTransaction" },
+      "description": "Immutable inventory ledger for all stock changes."
+    },
+    "/suppliers/{supplierId}": {
+      "schema": { "$ref": "#/entities/Supplier" },
+      "description": "Supplier contact and history records."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Wholesale customer contact records."
+    },
+    "/enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/Enquiry" },
+      "description": "Buyer quotation and WhatsApp enquiries."
+    },
+    "/companySettings/{settingId}": {
+      "schema": { "$ref": "#/entities/CompanySettings" },
+      "description": "Company branding and footer details."
+    },
+    "/whatsappNumbers/{numberId}": {
+      "schema": { "$ref": "#/entities/WhatsAppNumber" },
+      "description": "Active and configured WhatsApp enquiry numbers."
+    },
+    "/cmsConfig/{configId}": {
+      "schema": { "$ref": "#/entities/CmsConfigDocument" },
+      "description": "Website CMS draft and published configuration documents."
+    },
+    "/cmsRevisions/{revisionId}": {
+      "schema": { "$ref": "#/entities/CmsRevision" },
+      "description": "Admin-only Website CMS revision history snapshots."
+    },
+    "/cmsPages/{pageId}": {
+      "schema": { "$ref": "#/entities/CmsPage" },
+      "description": "Managed public CMS pages with Draft/Published workflow."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Scheduled promotional and trade announcements."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Admin-only immutable audit logs of administrative actions."
+    }
+  }
+}

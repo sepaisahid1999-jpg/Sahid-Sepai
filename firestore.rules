@@ -1,0 +1,861 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Primitive Helpers
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmailKey(email) {
+      return email is string && email.size() >= 3 && email.size() <= 254 && email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser()
+        && request.auth.token.email != null
+        && (request.auth.token.email.lower() == 'sepaisahid1999@gmail.com'
+            || request.auth.token.email.lower() == 'gazijute91@gmail.com');
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true
+      );
+    }
+
+    function isViewer() {
+      return isAdmin() || (
+        isVerifiedUser()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'VIEWER'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true
+      );
+    }
+
+    function hasValidInviteRole(email, expectedRole) {
+      return isVerifiedUser()
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() == email
+        && exists(/databases/$(database)/documents/userInvites/$(email))
+        && get(/databases/$(database)/documents/userInvites/$(email)).data.active == true
+        && get(/databases/$(database)/documents/userInvites/$(email)).data.role == expectedRole;
+    }
+
+    function isBoundedString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isNonNegNum(val) {
+      return (val is int || val is float) && val >= 0;
+    }
+
+    function isNum(val) {
+      return val is int || val is float;
+    }
+
+    function isPosNum(val) {
+      return (val is int || val is float) && val > 0;
+    }
+
+    function isValidStringArray(arr, maxItems, maxItemLen) {
+      return arr is list
+        && arr.size() <= maxItems
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxItemLen));
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'active', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'active', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isValidEmailKey(data.email)
+        && isBoundedString(data.displayName, 1, 120)
+        && data.role in ['ADMIN', 'VIEWER', 'BUYER']
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserInvite(data) {
+      return data.keys().hasAll(['email', 'displayName', 'role', 'active', 'invitedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['email', 'displayName', 'role', 'active', 'invitedBy', 'createdAt', 'updatedAt'])
+        && isValidEmailKey(data.email)
+        && isBoundedString(data.displayName, 1, 120)
+        && data.role in ['ADMIN', 'VIEWER']
+        && data.active is bool
+        && isValidId(data.invitedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name', 'slug', 'active', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'slug', 'description', 'active', 'createdAt', 'updatedAt'])
+        && isBoundedString(data.name, 2, 80)
+        && isBoundedString(data.slug, 2, 80)
+        && data.slug.matches('^[a-z0-9\\-]+$')
+        && (!('description' in data) || isBoundedString(data.description, 0, 400))
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProduct(data) {
+      return data.keys().hasAll([
+          'productId', 'sku', 'name', 'categoryId', 'categoryName',
+          'description', 'unit', 'images', 'status', 'showStockPublicly',
+          'publicAvailableStock', 'minOrderQty', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'productId', 'sku', 'name', 'categoryId', 'categoryName',
+          'description', 'unit', 'images', 'status', 'showStockPublicly',
+          'publicAvailableStock', 'minOrderQty', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.productId)
+        && isBoundedString(data.sku, 2, 64)
+        && isBoundedString(data.name, 2, 160)
+        && isValidId(data.categoryId)
+        && isBoundedString(data.categoryName, 2, 80)
+        && isBoundedString(data.description, 0, 3000)
+        && isBoundedString(data.unit, 1, 32)
+        && isValidStringArray(data.images, 8, 1200)
+        && data.status in ['ACTIVE', 'INACTIVE', 'ARCHIVED']
+        && data.showStockPublicly is bool
+        && isNonNegNum(data.publicAvailableStock)
+        && isNonNegNum(data.minOrderQty)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+          'productId', 'sku', 'name', 'categoryId', 'categoryName', 'description', 'unit',
+          'images', 'availableStock', 'avgPurchasePrice', 'avgSalePrice',
+          'totalPurchaseQty', 'totalSalesQty', 'totalPurchaseAmount', 'totalSalesAmount',
+          'totalCogs', 'currentStockValue', 'grossProfit', 'estimatedProfit',
+          'lowStockThreshold', 'minOrderQty', 'showStockPublicly', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'productId', 'sku', 'name', 'categoryId', 'categoryName', 'description', 'unit',
+          'images', 'availableStock', 'avgPurchasePrice', 'avgSalePrice',
+          'totalPurchaseQty', 'totalSalesQty', 'totalPurchaseAmount', 'totalSalesAmount',
+          'totalCogs', 'currentStockValue', 'grossProfit', 'estimatedProfit',
+          'lowStockThreshold', 'minOrderQty', 'showStockPublicly', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.productId)
+        && isBoundedString(data.sku, 2, 64)
+        && isBoundedString(data.name, 2, 160)
+        && isValidId(data.categoryId)
+        && isBoundedString(data.categoryName, 2, 80)
+        && isBoundedString(data.description, 0, 3000)
+        && isBoundedString(data.unit, 1, 32)
+        && isValidStringArray(data.images, 8, 1200)
+        && isNonNegNum(data.availableStock)
+        && isNonNegNum(data.avgPurchasePrice)
+        && isNonNegNum(data.avgSalePrice)
+        && isNonNegNum(data.totalPurchaseQty)
+        && isNonNegNum(data.totalSalesQty)
+        && isNonNegNum(data.totalPurchaseAmount)
+        && isNonNegNum(data.totalSalesAmount)
+        && isNonNegNum(data.totalCogs)
+        && isNonNegNum(data.currentStockValue)
+        && isNum(data.grossProfit)
+        && isNum(data.estimatedProfit)
+        && isNonNegNum(data.lowStockThreshold)
+        && isNonNegNum(data.minOrderQty)
+        && data.showStockPublicly is bool
+        && data.status in ['ACTIVE', 'INACTIVE', 'ARCHIVED']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPurchase(data) {
+      return data.keys().hasAll([
+          'productId', 'productName', 'sku', 'unit', 'purchaseDate',
+          'supplierId', 'supplierName', 'invoiceNumber', 'quantity',
+          'purchaseRate', 'additionalExpenses', 'totalAmount', 'notes',
+          'type', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'purchaseId', 'productId', 'productName', 'sku', 'unit', 'purchaseDate',
+          'supplierId', 'supplierName', 'invoiceNumber', 'quantity',
+          'purchaseRate', 'freightAmount', 'otherExpenses', 'discount', 'taxAmount',
+          'additionalExpenses', 'totalAmount', 'paymentStatus', 'referencePurchaseId',
+          'notes', 'type', 'createdBy', 'createdAt'
+        ])
+        && (!('purchaseId' in data) || isValidId(data.purchaseId))
+        && isValidId(data.productId)
+        && isBoundedString(data.productName, 1, 160)
+        && isBoundedString(data.sku, 1, 64)
+        && isBoundedString(data.unit, 1, 32)
+        && isBoundedString(data.purchaseDate, 8, 32)
+        && isBoundedString(data.supplierId, 0, 128)
+        && isBoundedString(data.supplierName, 1, 160)
+        && isBoundedString(data.invoiceNumber, 1, 80)
+        && isPosNum(data.quantity)
+        && isNonNegNum(data.purchaseRate)
+        && (!('freightAmount' in data) || isNonNegNum(data.freightAmount))
+        && (!('otherExpenses' in data) || isNonNegNum(data.otherExpenses))
+        && (!('discount' in data) || isNonNegNum(data.discount))
+        && (!('taxAmount' in data) || isNonNegNum(data.taxAmount))
+        && isNonNegNum(data.additionalExpenses)
+        && isNonNegNum(data.totalAmount)
+        && (!('paymentStatus' in data) || data.paymentStatus in ['PAID', 'PARTIAL', 'PENDING', 'CREDIT'])
+        && (!('referencePurchaseId' in data) || isBoundedString(data.referencePurchaseId, 0, 128))
+        && isBoundedString(data.notes, 0, 1000)
+        && data.type in ['PURCHASE', 'CORRECTION', 'RETURN_TO_SUPPLIER', 'CANCELLATION_REVERSAL']
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll([
+          'productId', 'productName', 'sku', 'unit', 'customerId', 'customerName',
+          'saleDate', 'invoiceNumber', 'quantity', 'saleRate', 'discount',
+          'additionalCharges', 'totalAmount', 'costOfGoodsSold', 'grossProfit',
+          'notes', 'type', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'productId', 'productName', 'sku', 'unit', 'customerId', 'customerName',
+          'saleDate', 'invoiceNumber', 'quantity', 'saleRate', 'discount',
+          'additionalCharges', 'totalAmount', 'costOfGoodsSold', 'grossProfit',
+          'notes', 'type', 'createdBy', 'createdAt'
+        ])
+        && isValidId(data.productId)
+        && isBoundedString(data.productName, 1, 160)
+        && isBoundedString(data.sku, 1, 64)
+        && isBoundedString(data.unit, 1, 32)
+        && isBoundedString(data.customerId, 0, 128)
+        && isBoundedString(data.customerName, 1, 160)
+        && isBoundedString(data.saleDate, 8, 32)
+        && isBoundedString(data.invoiceNumber, 1, 80)
+        && isPosNum(data.quantity)
+        && isNonNegNum(data.saleRate)
+        && isNonNegNum(data.discount)
+        && isNonNegNum(data.additionalCharges)
+        && isNonNegNum(data.totalAmount)
+        && isNonNegNum(data.costOfGoodsSold)
+        && isNum(data.grossProfit)
+        && isBoundedString(data.notes, 0, 1000)
+        && data.type in ['SALE', 'CORRECTION', 'CUSTOMER_RETURN']
+        && isValidId(data.createdBy)
+        && data.createdBy == request.auth.uid
+        && data.createdAt is timestamp;
+    }
+
+    function isValidStockTransaction(data) {
+      return data.keys().hasAll([
+          'productId', 'productName', 'sku', 'txType', 'referenceId', 'txDate',
+          'quantityDelta', 'unitRate', 'totalValue', 'resultingStock',
+          'resultingAvgPurchasePrice', 'notes', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'productId', 'productName', 'sku', 'txType', 'referenceId', 'txDate',
+          'quantityDelta', 'unitRate', 'totalValue', 'resultingStock',
+          'resultingAvgPurchasePrice', 'notes', 'createdBy', 'createdAt'
+        ])
+        && isValidId(data.productId)
+        && isBoundedString(data.productName, 1, 160)
+        && isBoundedString(data.sku, 1, 64)
+        && data.txType in ['STOCK_IN', 'STOCK_OUT', 'PURCHASE_CORRECTION', 'PURCHASE_REVERSAL', 'SALE_RETURN', 'SALE_CANCELLATION']
+        && isValidId(data.referenceId)
+        && isBoundedString(data.txDate, 8, 32)
+        && isNum(data.quantityDelta)
+        && isNonNegNum(data.unitRate)
+        && isNonNegNum(data.totalValue)
+        && isNonNegNum(data.resultingStock)
+        && isNonNegNum(data.resultingAvgPurchasePrice)
+        && isBoundedString(data.notes, 0, 1000)
+        && isValidId(data.createdBy)
+        && data.createdBy == request.auth.uid
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSupplier(data) {
+      return data.keys().hasAll(['name', 'phone', 'email', 'address', 'gstNumber', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'phone', 'email', 'address', 'gstNumber', 'notes', 'createdAt', 'updatedAt'])
+        && isBoundedString(data.name, 2, 160)
+        && isBoundedString(data.phone, 0, 32)
+        && isBoundedString(data.email, 0, 254)
+        && isBoundedString(data.address, 0, 400)
+        && isBoundedString(data.gstNumber, 0, 32)
+        && isBoundedString(data.notes, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['name', 'phone', 'location', 'email', 'gstNumber', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'phone', 'location', 'email', 'gstNumber', 'notes', 'createdAt', 'updatedAt'])
+        && isBoundedString(data.name, 2, 160)
+        && isBoundedString(data.phone, 0, 32)
+        && isBoundedString(data.location, 0, 200)
+        && isBoundedString(data.email, 0, 254)
+        && isBoundedString(data.gstNumber, 0, 32)
+        && isBoundedString(data.notes, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEnquiry(data) {
+      return data.keys().hasAll([
+          'productId', 'productName', 'sku', 'quantity', 'unit',
+          'buyerName', 'buyerPhone', 'buyerLocation', 'message',
+          'whatsappNumberUsed', 'enquiryType', 'status', 'adminNotes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'productId', 'productName', 'sku', 'quantity', 'unit',
+          'buyerName', 'buyerPhone', 'buyerLocation', 'message',
+          'whatsappNumberUsed', 'enquiryType', 'status', 'adminNotes',
+          'createdAt', 'updatedAt'
+        ])
+        && isBoundedString(data.productId, 0, 128)
+        && isBoundedString(data.productName, 1, 160)
+        && isBoundedString(data.sku, 0, 64)
+        && isNonNegNum(data.quantity)
+        && isBoundedString(data.unit, 0, 32)
+        && isBoundedString(data.buyerName, 2, 120)
+        && isBoundedString(data.buyerPhone, 0, 32)
+        && isBoundedString(data.buyerLocation, 2, 200)
+        && isBoundedString(data.message, 0, 2000)
+        && isBoundedString(data.whatsappNumberUsed, 0, 24)
+        && data.enquiryType in ['PRODUCT', 'GENERAL']
+        && data.status in ['NEW', 'PENDING', 'CONTACTED', 'COMPLETED', 'CANCELLED']
+        && isBoundedString(data.adminNotes, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompanySettings(data) {
+      return data.keys().hasAll([
+          'companyName', 'tagline', 'logoUrl', 'contactNumbers', 'email',
+          'address', 'aboutSummary', 'aboutStory', 'footerCopyright',
+          'businessHours', 'gstNumber', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'companyName', 'tagline', 'logoUrl', 'contactNumbers', 'email',
+          'address', 'aboutSummary', 'aboutStory', 'footerCopyright',
+          'businessHours', 'gstNumber', 'updatedAt'
+        ])
+        && isBoundedString(data.companyName, 2, 160)
+        && isBoundedString(data.tagline, 0, 240)
+        && isBoundedString(data.logoUrl, 0, 1000)
+        && isValidStringArray(data.contactNumbers, 6, 32)
+        && isValidEmailKey(data.email)
+        && isBoundedString(data.address, 0, 500)
+        && isBoundedString(data.aboutSummary, 0, 2000)
+        && isBoundedString(data.aboutStory, 0, 5000)
+        && isBoundedString(data.footerCopyright, 2, 240)
+        && isBoundedString(data.businessHours, 0, 200)
+        && isBoundedString(data.gstNumber, 0, 32)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWhatsAppNumber(data) {
+      return data.keys().hasAll([
+          'displayName', 'phoneNumber', 'isActive', 'isDefault',
+          'receivesProductEnquiries', 'receivesGeneralEnquiries',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'displayName', 'phoneNumber', 'isActive', 'isDefault',
+          'receivesProductEnquiries', 'receivesGeneralEnquiries',
+          'createdAt', 'updatedAt'
+        ])
+        && isBoundedString(data.displayName, 2, 80)
+        && data.phoneNumber is string
+        && data.phoneNumber.size() >= 8
+        && data.phoneNumber.size() <= 18
+        && data.phoneNumber.matches('^\\+[1-9][0-9]{6,14}$')
+        && data.isActive is bool
+        && data.isDefault is bool
+        && data.receivesProductEnquiries is bool
+        && data.receivesGeneralEnquiries is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCmsConfig(data) {
+      return data.keys().hasAll([
+          'status', 'version', 'general', 'header', 'homepage',
+          'footer', 'design', 'seo', 'updatedBy', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'status', 'version', 'general', 'header', 'homepage',
+          'footer', 'design', 'seo', 'updatedBy', 'updatedAt'
+        ])
+        && data.status in ['DRAFT', 'PUBLISHED', 'UNPUBLISHED']
+        && isNonNegNum(data.version)
+        && data.general is map
+        && data.header is map
+        && data.homepage is map
+        && data.footer is map
+        && data.design is map
+        && data.seo is map
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCmsRevision(data) {
+      return data.keys().hasAll([
+          'version', 'action', 'note', 'savedBy', 'savedByEmail', 'snapshot', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'version', 'action', 'note', 'savedBy', 'savedByEmail', 'snapshot', 'createdAt'
+        ])
+        && isNonNegNum(data.version)
+        && data.action in ['PUBLISHED', 'DRAFT_SAVED', 'UNPUBLISHED', 'RESTORED']
+        && isBoundedString(data.note, 0, 300)
+        && isValidId(data.savedBy)
+        && data.savedBy == request.auth.uid
+        && isBoundedString(data.savedByEmail, 0, 254)
+        && data.snapshot is map
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCmsPage(data) {
+      return data.keys().hasAll([
+          'pageId', 'slug', 'title', 'subtitle', 'heroImage', 'content',
+          'galleryImages', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoOgImage',
+          'status', 'isSystemPage', 'showInNav', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'pageId', 'slug', 'title', 'subtitle', 'heroImage', 'content',
+          'galleryImages', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoOgImage',
+          'status', 'isSystemPage', 'showInNav', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.pageId)
+        && isBoundedString(data.slug, 1, 120)
+        && data.slug.matches('^[a-z0-9\\-]+$')
+        && isBoundedString(data.title, 1, 160)
+        && isBoundedString(data.subtitle, 0, 400)
+        && isBoundedString(data.heroImage, 0, 1200)
+        && isBoundedString(data.content, 0, 20000)
+        && isValidStringArray(data.galleryImages, 8, 1200)
+        && isBoundedString(data.seoTitle, 0, 160)
+        && isBoundedString(data.seoDescription, 0, 320)
+        && isBoundedString(data.seoKeywords, 0, 400)
+        && isBoundedString(data.seoOgImage, 0, 1200)
+        && data.status in ['DRAFT', 'PUBLISHED']
+        && data.isSystemPage is bool
+        && data.showInNav is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll([
+          'title', 'message', 'linkLabel', 'linkUrl', 'bgColor', 'textColor',
+          'isActive', 'startDate', 'endDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'message', 'linkLabel', 'linkUrl', 'bgColor', 'textColor',
+          'isActive', 'startDate', 'endDate', 'createdAt', 'updatedAt'
+        ])
+        && isBoundedString(data.title, 2, 160)
+        && isBoundedString(data.message, 2, 600)
+        && isBoundedString(data.linkLabel, 0, 60)
+        && isBoundedString(data.linkUrl, 0, 400)
+        && isBoundedString(data.bgColor, 1, 24)
+        && isBoundedString(data.textColor, 1, 24)
+        && data.isActive is bool
+        && isBoundedString(data.startDate, 0, 32)
+        && isBoundedString(data.endDate, 0, 32)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll([
+          'action', 'entityType', 'entityId', 'summary',
+          'actorUid', 'actorEmail', 'actorName', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'action', 'entityType', 'entityId', 'summary',
+          'actorUid', 'actorEmail', 'actorName', 'createdAt'
+        ])
+        && isBoundedString(data.action, 2, 64)
+        && isBoundedString(data.entityType, 2, 48)
+        && isBoundedString(data.entityId, 1, 128)
+        && isBoundedString(data.summary, 2, 400)
+        && isValidId(data.actorUid)
+        && data.actorUid == request.auth.uid
+        && isBoundedString(data.actorEmail, 3, 254)
+        && isBoundedString(data.actorName, 1, 120)
+        && data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Rules
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isOwner(userId) && isBootstrappedAdmin() && incoming().role == 'ADMIN' && incoming().active == true)
+          || (isOwner(userId) && hasValidInviteRole(incoming().email, incoming().role) && incoming().active == true)
+          || (isOwner(userId) && incoming().role == 'BUYER' && incoming().active == true)
+        );
+      allow update: if isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'active', 'updatedAt']);
+      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+    }
+
+    match /userInvites/{email} {
+      allow get: if isValidEmailKey(email) && (isAdmin() || (isVerifiedUser() && request.auth.token.email != null && request.auth.token.email.lower() == email));
+      allow list: if isAdmin();
+      allow create: if isValidEmailKey(email)
+        && isAdmin()
+        && isValidUserInvite(incoming())
+        && incoming().email == email
+        && incoming().invitedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidEmailKey(email)
+        && isAdmin()
+        && isValidUserInvite(incoming())
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'active', 'updatedAt']);
+      allow delete: if isValidEmailKey(email) && isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId) && (existing().active == true || isViewer());
+      allow list: if resource.data.active == true || isViewer();
+      allow create: if isValidId(categoryId)
+        && isAdmin()
+        && isValidCategory(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(categoryId)
+        && isAdmin()
+        && isValidCategory(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'slug', 'description', 'active', 'updatedAt']);
+      allow delete: if isValidId(categoryId) && isAdmin();
+    }
+
+    match /publicProducts/{productId} {
+      allow get: if isValidId(productId) && (existing().status == 'ACTIVE' || isViewer());
+      allow list: if resource.data.status == 'ACTIVE' || isViewer();
+      allow create: if isValidId(productId)
+        && isAdmin()
+        && isValidPublicProduct(incoming())
+        && incoming().productId == productId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(productId)
+        && isAdmin()
+        && isValidPublicProduct(incoming())
+        && incoming().productId == existing().productId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'sku', 'name', 'categoryId', 'categoryName', 'description',
+          'unit', 'images', 'status', 'showStockPublicly',
+          'publicAvailableStock', 'minOrderQty', 'updatedAt'
+        ]);
+      allow delete: if isValidId(productId) && isAdmin();
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(productId)
+        && isAdmin()
+        && isValidProduct(incoming())
+        && incoming().productId == productId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(productId)
+        && isAdmin()
+        && isValidProduct(incoming())
+        && incoming().productId == existing().productId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'sku', 'name', 'categoryId', 'categoryName', 'description', 'unit',
+          'images', 'availableStock', 'avgPurchasePrice', 'avgSalePrice',
+          'totalPurchaseQty', 'totalSalesQty', 'totalPurchaseAmount', 'totalSalesAmount',
+          'totalCogs', 'currentStockValue', 'grossProfit', 'estimatedProfit',
+          'lowStockThreshold', 'minOrderQty', 'showStockPublicly', 'status', 'updatedAt'
+        ]);
+      allow delete: if isValidId(productId) && isAdmin()
+        && existing().totalPurchaseQty == 0
+        && existing().totalSalesQty == 0;
+    }
+
+    match /purchases/{purchaseId} {
+      allow get: if isValidId(purchaseId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(purchaseId)
+        && isAdmin()
+        && isValidPurchase(incoming())
+        && incoming().createdBy == request.auth.uid
+        && exists(/databases/$(database)/documents/products/$(incoming().productId))
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(purchaseId)
+        && isAdmin()
+        && isValidPurchase(incoming())
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['paymentStatus', 'notes']);
+      allow delete: if false;
+    }
+
+    match /sales/{saleId} {
+      allow get: if isValidId(saleId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(saleId)
+        && isAdmin()
+        && isValidSale(incoming())
+        && exists(/databases/$(database)/documents/products/$(incoming().productId))
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /stockTransactions/{txId} {
+      allow get: if isValidId(txId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(txId)
+        && isAdmin()
+        && isValidStockTransaction(incoming())
+        && exists(/databases/$(database)/documents/products/$(incoming().productId))
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /suppliers/{supplierId} {
+      allow get: if isValidId(supplierId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(supplierId)
+        && isAdmin()
+        && isValidSupplier(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(supplierId)
+        && isAdmin()
+        && isValidSupplier(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'address', 'gstNumber', 'notes', 'updatedAt']);
+      allow delete: if isValidId(supplierId) && isAdmin();
+    }
+
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && isViewer();
+      allow list: if isViewer();
+      allow create: if isValidId(customerId)
+        && isAdmin()
+        && isValidCustomer(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(customerId)
+        && isAdmin()
+        && isValidCustomer(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'location', 'email', 'gstNumber', 'notes', 'updatedAt']);
+      allow delete: if isValidId(customerId) && isAdmin();
+    }
+
+    match /enquiries/{enquiryId} {
+      allow get: if isValidId(enquiryId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(enquiryId)
+        && isValidEnquiry(incoming())
+        && incoming().status == 'NEW'
+        && incoming().adminNotes == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(enquiryId)
+        && isAdmin()
+        && isValidEnquiry(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'updatedAt']);
+      allow delete: if isValidId(enquiryId) && isAdmin();
+    }
+
+    match /companySettings/{settingId} {
+      allow get: if isValidId(settingId) && (settingId == 'public' || isViewer());
+      allow list: if isViewer();
+      allow create: if isValidId(settingId)
+        && isAdmin()
+        && isValidCompanySettings(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId)
+        && isAdmin()
+        && isValidCompanySettings(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'companyName', 'tagline', 'logoUrl', 'contactNumbers', 'email',
+          'address', 'aboutSummary', 'aboutStory', 'footerCopyright',
+          'businessHours', 'gstNumber', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /whatsappNumbers/{numberId} {
+      allow get: if isValidId(numberId) && (existing().isActive == true || isAdmin());
+      allow list: if resource.data.isActive == true || isAdmin();
+      allow create: if isValidId(numberId)
+        && isAdmin()
+        && isValidWhatsAppNumber(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(numberId)
+        && isAdmin()
+        && isValidWhatsAppNumber(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'phoneNumber', 'isActive', 'isDefault',
+          'receivesProductEnquiries', 'receivesGeneralEnquiries', 'updatedAt'
+        ]);
+      allow delete: if isValidId(numberId) && isAdmin();
+    }
+
+    // -------------------------------------------------------------------------
+    // Website CMS Collections (Draft/Publish Isolation)
+    // -------------------------------------------------------------------------
+    match /cmsConfig/{configId} {
+      allow get: if isValidId(configId) && (configId == 'published' || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(configId)
+        && configId in ['draft', 'published']
+        && isAdmin()
+        && isValidCmsConfig(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(configId)
+        && configId in ['draft', 'published']
+        && isAdmin()
+        && isValidCmsConfig(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'version', 'general', 'header', 'homepage',
+          'footer', 'design', 'seo', 'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if isValidId(configId) && configId in ['draft', 'published'] && isAdmin();
+    }
+
+    match /cmsRevisions/{revisionId} {
+      allow get: if isValidId(revisionId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(revisionId)
+        && isAdmin()
+        && isValidCmsRevision(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(revisionId) && isAdmin();
+    }
+
+    match /cmsPages/{pageId} {
+      allow get: if isValidId(pageId) && (existing().status == 'PUBLISHED' || isAdmin());
+      allow list: if resource.data.status == 'PUBLISHED' || isAdmin();
+      allow create: if isValidId(pageId)
+        && isAdmin()
+        && isValidCmsPage(incoming())
+        && incoming().pageId == pageId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(pageId)
+        && isAdmin()
+        && isValidCmsPage(incoming())
+        && incoming().pageId == existing().pageId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'slug', 'title', 'subtitle', 'heroImage', 'content',
+          'galleryImages', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoOgImage',
+          'status', 'isSystemPage', 'showInNav', 'updatedAt'
+        ]);
+      allow delete: if isValidId(pageId) && isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow get: if isValidId(announcementId) && (existing().isActive == true || isAdmin());
+      allow list: if resource.data.isActive == true || isAdmin();
+      allow create: if isValidId(announcementId)
+        && isAdmin()
+        && isValidAnnouncement(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(announcementId)
+        && isAdmin()
+        && isValidAnnouncement(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'message', 'linkLabel', 'linkUrl', 'bgColor', 'textColor',
+          'isActive', 'startDate', 'endDate', 'updatedAt'
+        ]);
+      allow delete: if isValidId(announcementId) && isAdmin();
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin Immutable Audit Logs
+    // -------------------------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId)
+        && isAdmin()
+        && isValidAuditLog(incoming())
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}
